@@ -4,6 +4,7 @@ Config = {}
 Config.UseOxLib = true -- Sử dụng ox_lib
 Config.UseTarget = true -- Sử dụng qb-target hoặc ox_target
 Config.TargetDistance = 3.0 -- Khoảng cách hiển thị target
+Config.UseDrawText = true -- Sử dụng DrawText khi không dùng target
 
 -- Cài đặt garage
 Config.JobGarages = {
@@ -111,7 +112,7 @@ Config.JobGarages = {
                     livery = 0,
                     extras = {}
                 }
-            ],
+            },
             [4] = { -- Cấp bậc 4 (Chief)
                 {
                     model = 'police',
@@ -254,5 +255,6 @@ Config.Notifications = {
     wrongJob = 'Bạn không có quyền sử dụng garage này',
     limitReached = 'Bạn đã đạt giới hạn số xe có thể lấy ra (%d xe)',
     notInVehicle = 'Bạn cần phải ngồi trong xe để cất xe',
-    tooFarAway = 'Xe quá xa để cất vào garage'
+    tooFarAway = 'Xe quá xa để cất vào garage',
+    noVehiclesAvailable = 'Không có xe nào khả dụng'
 }
