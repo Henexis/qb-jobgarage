@@ -2,9 +2,9 @@ Config = {}
 
 -- Cài đặt chung
 Config.UseOxLib = true -- Sử dụng ox_lib
-Config.UseTarget = true -- Sử dụng qb-target hoặc ox_target
+Config.UseTarget = false -- Sử dụng qb-target hoặc ox_target
 Config.TargetDistance = 3.0 -- Khoảng cách hiển thị target
-Config.UseDrawText = false -- Sử dụng DrawText khi không dùng target
+Config.UseDrawText = true -- Sử dụng DrawText khi không dùng target
 
 -- Cài đặt garage
 Config.JobGarages = {
