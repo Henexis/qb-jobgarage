@@ -62,7 +62,7 @@ local function OpenGarageMenu(jobName, locationIndex)
         end
         
         local options = {}
-        local jobGrade = PlayerData.job.grade.name
+        local jobGrade = PlayerData.job.grade.level
         local availableVehicles = garage.vehicles[jobGrade] or {}
         
         if #availableVehicles == 0 then
