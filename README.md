@@ -64,7 +64,7 @@ Xe không xuất hiện khi lấy ra:
 Kiểm tra xem điểm spawn có bị chặn không.
 Kiểm tra xem bạn đã đạt giới hạn số lượng xe chưa.
 Kiểm tra logs server để xem có lỗi SQL nào không.
-Không thể cất xe:
+Không thể cất xe: 
 
 Đảm bảo bạn đang ngồi trong xe.
 Kiểm tra xem xe có phải là xe của nghề nghiệp không.
