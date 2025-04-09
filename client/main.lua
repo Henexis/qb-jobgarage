@@ -42,6 +42,24 @@ local function CreateBlips()
     end
 end
 
+-- Hiển thị thông báo
+local function ShowNotification(message, type)
+    if Config.UseOxLib then
+        if lib and lib.notify then
+            lib.notify({
+                title = 'Garage',
+                description = message,
+                type = type or 'info'
+            })
+        else
+            -- Fallback nếu ox_lib không hoạt động
+            QBCore.Functions.Notify(message, type)
+        end
+    else
+        QBCore.Functions.Notify(message, type)
+    end
+end
+
 -- Hiển thị menu lấy xe
 local function OpenGarageMenu(jobName, locationIndex)
     local garage = Config.JobGarages[jobName]
@@ -49,53 +67,40 @@ local function OpenGarageMenu(jobName, locationIndex)
     
     QBCore.Functions.TriggerCallback('qb-jobgarage:server:GetVehicles', function(vehicles, activeCount, maxVehicles)
         if activeCount >= maxVehicles then
-            if Config.UseOxLib then
-                lib.notify({
-                    title = 'Garage',
-                    description = string.format(Config.Notifications.limitReached, maxVehicles),
-                    type = 'error'
-                })
-            else
-                QBCore.Functions.Notify(string.format(Config.Notifications.limitReached, maxVehicles), 'error')
-            end
+            ShowNotification(string.format(Config.Notifications.limitReached, maxVehicles), 'error')
             return
         end
         
-        local options = {}
         local jobGrade = PlayerData.job.grade.level
         local availableVehicles = garage.vehicles[jobGrade] or {}
         
         if #availableVehicles == 0 then
-            if Config.UseOxLib then
-                lib.notify({
-                    title = 'Garage',
-                    description = Config.Notifications.noVehicles,
-                    type = 'error'
-                })
-            else
-                QBCore.Functions.Notify(Config.Notifications.noVehicles, 'error')
-            end
+            ShowNotification(Config.Notifications.noVehicles, 'error')
             return
         end
         
-        for _, vehicle in ipairs(availableVehicles) do
-            table.insert(options, {
-                title = vehicle.label,
-                description = 'Lấy xe ' .. vehicle.label,
-                onSelect = function()
-                    SpawnVehicle(jobName, vehicle, locationIndex)
-                end
-            })
-        end
-        
-        if Config.UseOxLib then
-            lib.showContext('job_garage_menu', {
+        if Config.UseOxLib and lib and lib.registerContext then
+            local options = {}
+            
+            for _, vehicle in ipairs(availableVehicles) do
+                table.insert(options, {
+                    title = vehicle.label,
+                    description = 'Lấy xe ' .. vehicle.label,
+                    onSelect = function()
+                        SpawnVehicle(jobName, vehicle, locationIndex)
+                    end
+                })
+            end
+            
+            lib.registerContext({
                 id = 'job_garage_menu',
                 title = garage.label,
                 options = options
             })
+            
+            lib.showContext('job_garage_menu')
         else
-            -- Sử dụng menu mặc định của QBCore nếu không dùng ox_lib
+            -- Sử dụng menu mặc định của QBCore
             local menu = {
                 {
                     header = garage.label,
@@ -103,20 +108,28 @@ local function OpenGarageMenu(jobName, locationIndex)
                 }
             }
             
-            for i, option in ipairs(options) do
+            for i, vehicle in ipairs(availableVehicles) do
                 menu[#menu+1] = {
-                    header = option.title,
-                    txt = option.description,
+                    header = vehicle.label,
+                    txt = 'Lấy xe ' .. vehicle.label,
                     params = {
                         event = 'qb-jobgarage:client:SpawnVehicle',
                         args = {
                             jobName = jobName,
-                            vehicle = availableVehicles[i],
+                            vehicle = vehicle,
                             locationIndex = locationIndex
                         }
                     }
                 }
             end
+            
+            menu[#menu+1] = {
+                header = "⬅ Đóng",
+                txt = "",
+                params = {
+                    event = "qb-menu:client:closeMenu"
+                }
+            }
             
             exports['qb-menu']:openMenu(menu)
         end
@@ -128,50 +141,52 @@ function SpawnVehicle(jobName, vehicleData, locationIndex)
     local garage = Config.JobGarages[jobName]
     local spawnPoint = garage.locations[locationIndex].spawnPoint
     
-    QBCore.Functions.TriggerCallback('qb-jobgarage:server:SpawnVehicle', function(success, plate, vehicleProps)
-        if success then
-            QBCore.Functions.SpawnVehicle(vehicleData.model, function(vehicle)
-                SetEntityHeading(vehicle, spawnPoint.w)
-                SetVehicleNumberPlateText(vehicle, plate)
-                
-                if vehicleProps then
-                    QBCore.Functions.SetVehicleProperties(vehicle, vehicleProps)
-                end
-                
-                if vehicleData.livery then
-                    SetVehicleLivery(vehicle, vehicleData.livery)
-                end
-                
-                if vehicleData.extras then
-                    for extraId, enabled in pairs(vehicleData.extras) do
-                        SetVehicleExtra(vehicle, tonumber(extraId), not enabled)
-                    end
-                end
-                
-                SetVehicleFuelLevel(vehicle, vehicleProps and vehicleProps.fuelLevel or 100.0)
-                SetVehicleEngineHealth(vehicle, vehicleProps and vehicleProps.engineHealth or 1000.0)
-                SetVehicleBodyHealth(vehicle, vehicleProps and vehicleProps.bodyHealth or 1000.0)
-                
-                TriggerEvent("vehiclekeys:client:SetOwner", QBCore.Functions.GetPlate(vehicle))
-                SetVehicleEngineOn(vehicle, true, true)
-                
-                if Config.UseOxLib then
-                    lib.notify({
-                        title = 'Garage',
-                        description = string.format(Config.Notifications.vehicleOut, vehicleData.label),
-                        type = 'success'
-                    })
-                else
-                    QBCore.Functions.Notify(string.format(Config.Notifications.vehicleOut, vehicleData.label), 'success')
-                end
-                
-                table.insert(activeVehicles, {
-                    plate = plate,
-                    job = jobName
-                })
-            end, spawnPoint, true)
+    -- Kiểm tra xem có xe nào đang ở vị trí spawn không
+    QBCore.Functions.SpawnClear(vector3(spawnPoint.x, spawnPoint.y, spawnPoint.z), 5.0, function(isClear)
+        if not isClear then
+            ShowNotification('Có xe đang chặn điểm spawn. Vui lòng di chuyển xe.', 'error')
+            return
         end
-    end, jobName, vehicleData.model)
+        
+        QBCore.Functions.TriggerCallback('qb-jobgarage:server:SpawnVehicle', function(success, plate, vehicleProps)
+            if success then
+                QBCore.Functions.SpawnVehicle(vehicleData.model, function(vehicle)
+                    SetEntityHeading(vehicle, spawnPoint.w)
+                    SetVehicleNumberPlateText(vehicle, plate)
+                    
+                    if vehicleProps then
+                        QBCore.Functions.SetVehicleProperties(vehicle, vehicleProps)
+                    end
+                    
+                    if vehicleData.livery then
+                        SetVehicleLivery(vehicle, vehicleData.livery)
+                    end
+                    
+                    if vehicleData.extras then
+                        for extraId, enabled in pairs(vehicleData.extras) do
+                            SetVehicleExtra(vehicle, tonumber(extraId), not enabled)
+                        end
+                    end
+                    
+                    SetVehicleFuelLevel(vehicle, vehicleProps and vehicleProps.fuelLevel or 100.0)
+                    SetVehicleEngineHealth(vehicle, vehicleProps and vehicleProps.engineHealth or 1000.0)
+                    SetVehicleBodyHealth(vehicle, vehicleProps and vehicleProps.bodyHealth or 1000.0)
+                    
+                    TriggerEvent("vehiclekeys:client:SetOwner", QBCore.Functions.GetPlate(vehicle))
+                    SetVehicleEngineOn(vehicle, true, true)
+                    
+                    ShowNotification(string.format(Config.Notifications.vehicleOut, vehicleData.label), 'success')
+                    
+                    table.insert(activeVehicles, {
+                        plate = plate,
+                        job = jobName
+                    })
+                end, spawnPoint, true)
+            else
+                ShowNotification(Config.Notifications.noVehiclesAvailable, 'error')
+            end
+        end, jobName, vehicleData.model)
+    end)
 end
 
 RegisterNetEvent('qb-jobgarage:client:SpawnVehicle', function(data)
@@ -182,20 +197,21 @@ end)
 local function StoreVehicle(jobName, returnPoint)
     local ped = PlayerPedId()
     if not IsPedInAnyVehicle(ped, false) then
-        if Config.UseOxLib then
-            lib.notify({
-                title = 'Garage',
-                description = Config.Notifications.notInVehicle,
-                type = 'error'
-            })
-        else
-            QBCore.Functions.Notify(Config.Notifications.notInVehicle, 'error')
-        end
+        ShowNotification(Config.Notifications.notInVehicle, 'error')
         return
     end
     
     local vehicle = GetVehiclePedIsIn(ped, false)
+    if not DoesEntityExist(vehicle) then
+        ShowNotification(Config.Notifications.notInVehicle, 'error')
+        return
+    end
+    
     local plate = QBCore.Functions.GetPlate(vehicle)
+    if not plate then
+        ShowNotification(Config.Notifications.notJobVehicle, 'error')
+        return
+    end
     
     -- Kiểm tra xem xe có phải là xe của nghề nghiệp không
     local isJobVehicle = false
@@ -209,18 +225,8 @@ local function StoreVehicle(jobName, returnPoint)
     
     if not isJobVehicle then
         QBCore.Functions.TriggerCallback('qb-jobgarage:server:CheckJobVehicle', function(result)
-            isJobVehicle = result
-            
-            if not isJobVehicle then
-                if Config.UseOxLib then
-                    lib.notify({
-                        title = 'Garage',
-                        description = Config.Notifications.notJobVehicle,
-                        type = 'error'
-                    })
-                else
-                    QBCore.Functions.Notify(Config.Notifications.notJobVehicle, 'error')
-                end
+            if not result then
+                ShowNotification(Config.Notifications.notJobVehicle, 'error')
                 return
             else
                 ProcessVehicleStorage(vehicle, plate, jobName)
@@ -233,6 +239,8 @@ end
 
 function ProcessVehicleStorage(vehicle, plate, jobName)
     local vehicleProps = QBCore.Functions.GetVehicleProperties(vehicle)
+    
+    -- Đảm bảo các thuộc tính quan trọng luôn tồn tại
     vehicleProps.fuelLevel = GetVehicleFuelLevel(vehicle)
     vehicleProps.bodyHealth = GetVehicleBodyHealth(vehicle)
     vehicleProps.engineHealth = GetVehicleEngineHealth(vehicle)
@@ -241,15 +249,7 @@ function ProcessVehicleStorage(vehicle, plate, jobName)
     
     QBCore.Functions.DeleteVehicle(vehicle)
     
-    if Config.UseOxLib then
-        lib.notify({
-            title = 'Garage',
-            description = Config.Notifications.vehicleStored,
-            type = 'success'
-        })
-    else
-        QBCore.Functions.Notify(Config.Notifications.vehicleStored, 'success')
-    end
+    ShowNotification(Config.Notifications.vehicleStored, 'success')
 end
 
 -- Thiết lập các điểm tương tác
@@ -320,7 +320,7 @@ local function SetupJobGarages()
             end
         end
     else
-        -- Sử dụng polyzone nếu không dùng target
+        -- Sử dụng DrawText khi không dùng target
         CreateThread(function()
             while true do
                 local sleep = 1000
@@ -346,7 +346,7 @@ local function SetupJobGarages()
                                     
                                     if not inVehicle then
                                         DrawMarker(2, location.coords.x, location.coords.y, location.coords.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.2, 0.15, 200, 0, 0, 222, false, false, false, true, false, false, false)
-                                        if dist < 1.5 then
+                                        if dist < 1.5 and Config.UseDrawText then
                                             DrawText3D(location.coords.x, location.coords.y, location.coords.z + 0.2, '[E] Mở Garage ' .. garageData.label)
                                             if IsControlJustPressed(0, 38) then -- E key
                                                 OpenGarageMenu(jobName, i)
@@ -369,7 +369,7 @@ local function SetupJobGarages()
                                         }
                                         
                                         DrawMarker(2, location.returnPoint.x, location.returnPoint.y, location.returnPoint.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.2, 0.15, 200, 0, 0, 222, false, false, false, true, false, false, false)
-                                        if returnDist < 1.5 then
+                                        if returnDist < 1.5 and Config.UseDrawText then
                                             DrawText3D(location.returnPoint.x, location.returnPoint.y, location.returnPoint.z + 0.2, '[E] Cất Xe Vào Garage')
                                             if IsControlJustPressed(0, 38) then -- E key
                                                 StoreVehicle(jobName, location.returnPoint)
@@ -423,4 +423,3 @@ CreateThread(function()
     CreateBlips()
     SetupJobGarages()
 end)
-
