@@ -12,7 +12,7 @@ QBCore.Functions.CreateCallback('qb-jobgarage:server:GetVehicles', function(sour
     end
     
     local citizenid = Player.PlayerData.citizenid
-    local jobGrade = Player.PlayerData.job.grade.name
+    local jobGrade = Player.PlayerData.job.grade.level
     local maxVehicles = Config.JobGarages[jobName].limits[jobGrade] or 1
     
     -- Đếm số xe đã lấy ra
