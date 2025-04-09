@@ -47,7 +47,7 @@ QBCore.Functions.CreateCallback('qb-jobgarage:server:SpawnVehicle', function(sou
     end
     
     local citizenid = Player.PlayerData.citizenid
-    local jobGrade = Player.PlayerData.job.grade.name
+    local jobGrade = Player.PlayerData.job.grade.level
     local maxVehicles = Config.JobGarages[jobName].limits[jobGrade] or 1
     
     -- Kiểm tra số lượng xe đã lấy ra
@@ -66,34 +66,49 @@ QBCore.Functions.CreateCallback('qb-jobgarage:server:SpawnVehicle', function(sou
         local plate = GeneratePlate()
         
         -- Kiểm tra xem xe đã tồn tại trong database chưa
-        MySQL.Async.fetchAll('SELECT * FROM job_vehicles WHERE plate = ? AND citizenid = ? AND job = ? AND model = ?', {
-            plate,
+        MySQL.Async.fetchAll('SELECT * FROM job_vehicles WHERE citizenid = ? AND job = ? AND model = ? AND `out` = 0 LIMIT 1', {
             citizenid,
             jobName,
             model
-        }, function(existingVehicle)
-            if #existingVehicle > 0 then
+        }, function(existingVehicles)
+            if existingVehicles and #existingVehicles > 0 then
                 -- Xe đã tồn tại, cập nhật trạng thái
+                local existingVehicle = existingVehicles[1]
                 MySQL.Async.execute('UPDATE job_vehicles SET `out` = 1 WHERE id = ?', {
-                    existingVehicle[1].id
-                })
-                
-                local vehicleProps = json.decode(existingVehicle[1].properties or '{}')
-                cb(true, existingVehicle[1].plate, vehicleProps)
+                    existingVehicle.id
+                }, function(rowsChanged)
+                    if rowsChanged > 0 then
+                        local vehicleProps = json.decode(existingVehicle.properties or '{}')
+                        cb(true, existingVehicle.plate, vehicleProps)
+                    else
+                        -- Nếu không thể cập nhật, tạo xe mới
+                        CreateNewVehicle(src, citizenid, jobName, model, plate, cb)
+                    end
+                end)
             else
                 -- Tạo xe mới
-                MySQL.Async.insert('INSERT INTO job_vehicles (citizenid, job, plate, model, `out`) VALUES (?, ?, ?, ?, 1)', {
-                    citizenid,
-                    jobName,
-                    plate,
-                    model
-                })
-                
-                cb(true, plate, nil)
+                CreateNewVehicle(src, citizenid, jobName, model, plate, cb)
             end
         end)
     end)
 end)
+
+-- Hàm tạo xe mới
+function CreateNewVehicle(src, citizenid, jobName, model, plate, cb)
+    MySQL.Async.insert('INSERT INTO job_vehicles (citizenid, job, plate, model, `out`) VALUES (?, ?, ?, ?, 1)', {
+        citizenid,
+        jobName,
+        plate,
+        model
+    }, function(id)
+        if id > 0 then
+            cb(true, plate, nil)
+        else
+            TriggerClientEvent('QBCore:Notify', src, 'Không thể tạo xe mới', 'error')
+            cb(false)
+        end
+    end)
+end
 
 -- Cất xe vào garage
 RegisterNetEvent('qb-jobgarage:server:StoreVehicle', function(plate, vehicleProps, jobName)
@@ -109,17 +124,23 @@ RegisterNetEvent('qb-jobgarage:server:StoreVehicle', function(plate, vehicleProp
     
     local citizenid = Player.PlayerData.citizenid
     
-    -- Cập nhật thông tin xe
-    MySQL.Async.execute('UPDATE job_vehicles SET `out` = 0, fuel = ?, body = ?, engine = ?, properties = ? WHERE plate = ? AND job = ?', {
-        vehicleProps.fuelLevel or 100,
-        vehicleProps.bodyHealth or 1000.0,
-        vehicleProps.engineHealth or 1000.0,
-        json.encode(vehicleProps),
+    -- Kiểm tra xem xe có tồn tại trong database không
+    MySQL.Async.fetchAll('SELECT * FROM job_vehicles WHERE plate = ? AND job = ?', {
         plate,
         jobName
-    }, function(rowsChanged)
-        if rowsChanged == 0 then
-            -- Nếu không tìm thấy xe trong database, thêm mới
+    }, function(results)
+        if results and #results > 0 then
+            -- Xe đã tồn tại, cập nhật thông tin
+            MySQL.Async.execute('UPDATE job_vehicles SET `out` = 0, fuel = ?, body = ?, engine = ?, properties = ? WHERE plate = ? AND job = ?', {
+                vehicleProps.fuelLevel or 100,
+                vehicleProps.bodyHealth or 1000.0,
+                vehicleProps.engineHealth or 1000.0,
+                json.encode(vehicleProps),
+                plate,
+                jobName
+            })
+        else
+            -- Xe chưa tồn tại, thêm mới
             MySQL.Async.insert('INSERT INTO job_vehicles (citizenid, job, plate, model, fuel, body, engine, properties, `out`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)', {
                 citizenid,
                 jobName,
